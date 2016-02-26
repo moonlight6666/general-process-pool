@@ -9,34 +9,30 @@
 -define(SERVER, ?MODULE).
 -compile(export_all).
 
-start() ->
+start_link() ->
     Num = erlang:system_info(schedulers),
+    start_link(Num) .
+
+start_link(Num) ->
     {ok, _} = pool:start_link(server, ?MODULE, Num).
 
-now() ->
-    pool:call(?MODULE, call).
-echo() ->
-    pool:cast(?MODULE, echo).
-sleep() ->
-    pool:cast(?MODULE, sleep).
-sleep1() ->
-    pool:call(?MODULE, sleep).
-md5(N) ->
-    [pool:cast(?MODULE, md5) || _D<-lists:seq(1, N)].
+request() ->
+    pool:cast(?SERVER, request).
 
-handle_cast(echo, _From) ->
-    _From ! pppppp,
-    io:format("~p~n",["nihao!"]);
-handle_cast(sleep, _From) ->
-    _From ! pppppp,
-    timer:sleep(7000),
-    io:format("~p~n",["sleep!"]);
-handle_cast(md5, _From) ->
-    [erlang:md5("dfwefefwefefe") || _D <-lists:seq(1,100)].
+request1() ->
+    pool:cast(?SERVER, request1).
 
-handle_call(call, _From) ->
-    io:format("call......~n"),
-    erlang:now();
-handle_call(sleep, _From) ->
-    timer:sleep(10000),
-    io:format("sleep......~n").
+request2() ->
+    pool:call(?SERVER, request2).
+request3() ->
+    pool:call(?SERVER, request3).
+
+handle_cast(request, _From) ->
+    io:format("~p~n",["request"]);
+handle_cast(request1, _From) ->
+    io:format("~p~n",["request1"]).
+
+handle_call(request2, _From) ->
+    io:format("~p~n",["request2"]);
+handle_call(request3, _From) ->
+    io:format("~p~n",["request3"]).
