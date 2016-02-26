@@ -1,16 +1,28 @@
-ERLANG &nbsp;generic process pool .<br />
+<strong><span style="font-size:18px;">ERLANG &nbsp;generic process pool .</span></strong><br />
+
+<p>
+	<br />
+	
+</p>
+<p>
+	use erlang behaviour
+</p>
 <br />
-<br />
-use erlang behaviour<br />
-<br />
-<br />
-you can use like :<br />
+
+<h3>
+	you can use like :
+</h3>
 -behaviour(pool).<br />
 -export([handle_cast/2, handle_call/2]).<br />
 -define(SERVER, ?MODULE).<br />
--compile(export_all).<br />
-<br />
-<br />
+
+<p>
+	-compile(export_all).
+</p>
+<p>
+	<br />
+	
+</p>
 start() -&gt;<br />
 &nbsp; &nbsp; Num = erlang:system_info(schedulers),<br />
 &nbsp; &nbsp; {ok, _} = pool:start_link(server, ?MODULE, Num).<br />
@@ -23,7 +35,6 @@ sleep() -&gt;<br />
 &nbsp; &nbsp;&nbsp;<br />
 handle_cast(echo, _From) -&gt;<br />
 &nbsp; &nbsp; io:format(&quot;~p~n&quot;,[&quot;hello!&quot;]).<br />
-<br />
 <br />
 handle_call(now, _From) -&gt;<br />
 &nbsp; &nbsp; erlang:now();<br />
