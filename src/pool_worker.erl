@@ -22,71 +22,94 @@
 
 %% Generic worker pool worker.
 -module(pool_worker).
+%% API
 -export([
-    start_link/2,
-    cast/3,
-    call/3
+	start_link/2,
+	stop/1,
+	cast/2,
+	call/3,
+	call/4
 ]).
+
 -export([
-    init/2
+	init/2
 ]).
 
--record(state, {mgr, callback}).
--define(default_timeout, 6000).
+-record(state, {master, callback}).
+-define(CALL_TIMEOUT, 6000).
 
-start_link(Mgr, Callback) ->
-    {ok, _} = proc_lib:start_link(?MODULE, init, [Mgr, Callback]).
+-spec start_link(Master, Callback) -> Ret when
+	Master :: pid(),
+	Callback :: module(),
+	Ret :: {ok, Pid :: pid()} | {error, Reason :: term()}.
+start_link(Master, Callback) ->
+	{ok, _} = proc_lib:start_link(?MODULE, init, [Master, Callback]).
 
-cast(Pid, Msg, From) ->
-    Pid ! {'$cast', Msg, From}.
+-spec cast(Worker, Request) -> Ret when
+	Worker :: pid(),
+	Request :: term(),
+	Ret :: ok.
+cast(Worker, Request) ->
+	Worker ! {'$cast', Request}.
 
-call(Pid, Msg, From) ->
-    Pid ! {'$call', Msg, From}.
+-spec call(Worker, Request, From, Ref) -> Ret when
+	Worker :: pid(),
+	Request :: term(),
+	From :: pid(),
+	Ref :: reference(),
+	Ret :: {reply, Reply :: term()} | {error, Reason :: term()}.
+call(Worker, Request, Ref) ->
+	call(Worker, Request, Ref, ?CALL_TIMEOUT).
+call(Worker, Request, Ref, Timeout) ->
+	Worker ! {'$call', Request, self(), Ref},
+	receive
+		{reply, Reply, Ref} ->
+            {reply, Reply, Ref};
+		{error, Reason, Ref} ->
+            {error, Reason, Ref}
+	after Timeout ->
+		{error, timeout, Ref}
+	end.
 
-init(Mgr, Callback) ->
-    process_flag(trap_exit, true),
-	pool:ready(Mgr, self()),
-    proc_lib:init_ack({ok, self()}),
-	loop(#state{mgr = Mgr, callback = Callback}).
+stop(Worker) ->
+	erlang:send(Worker, '$stop').
 
-loop(State = #state{mgr = Mgr, callback = Callback}) ->
-    pool:idle(Mgr, self()),
-    receive
-        {'$cast', Request, From} ->
-            do({Callback, handle_cast, [Request, From]}, []),
-            loop(State);
-        {'$call', Request, {CPid, Ref}} ->
-            erlang:send(CPid, {'$do', {self(), Ref}}),
-            receive
-                {'$do_it', Ref} ->
-                    Ret = do({Callback, handle_call, [Request, CPid]}, Ref),
-                    erlang:send(CPid, Ret);
-                _Other ->
-                    io:format("worker : ~p~n",[_Other]),
-                    noop
-            after
-                ?default_timeout ->
-                    timeout
-            end,
-            loop(State);
-        {'EXIT', Mgr, _Reason} ->
-            io:format("pool_worker receive stop.~n"),
+init(Master, Callback) ->
+	erlang:monitor(process, Master),
+	gen_pool:ready(Master, self()),
+	proc_lib:init_ack({ok, self()}),
+	loop(#state{master = Master, callback = Callback}).
+
+loop(State = #state{master = Master, callback = Callback}) ->
+	receive
+		{'$cast', Request} ->
+			do({Callback, handle_cast, [Request]}, null),
+            gen_pool:idle(Master, self()),
+			loop(State);
+		{'$call', Request, From, Ref} ->
+			Ret = do({Callback, handle_call, [Request, From]}, Ref),
+			erlang:send(From, Ret),
+			loop(State);
+		{'DOWN', _Ref, process, Master, Reason} ->
+			io:format("Master shutdown: [~p]~n", [Reason]),
             stop;
-        Other ->
-            io:format("pool_worker receive unexpet msg : ~p.~n", [Other]),
+		'$stop' ->
+            stop;
+		Other ->
+			io:format("Receive unexpected msg: ~p~n", [Other]),
             loop(State)
-    end.
+	end.
 
 apply(Fun) when is_function(Fun) ->
-    Fun();
+	Fun();
 apply({M, F, A}) ->
-    erlang:apply(M, F, A).
+	erlang:apply(M, F, A).
 
-do(Fun, Ref) ->
-    try apply(Fun) of
-        Result ->
-            {'$reply', Result, Ref}
-    catch
-        _ : Reason ->
-            {'$error', Reason, Ref}
-    end.
+do(FunArgs, Ref) ->
+	try apply(FunArgs) of
+		Result ->
+			{reply, Result, Ref}
+	catch
+		_ : Reason ->
+			{error, Reason, Ref}
+	end.
